@@ -1,9 +1,10 @@
 // netlify/functions/merge-results.js
 // Reads partials for a given fileId and returns an aggregate.
-// Tries Netlify Blobs list/get; if unavailable, reads from ./local_partials/
+// Tries Netlify Blobs list/get; if unavailable, reads from OS tmp fallback.
 
 const path = require("path");
 const fs = require("fs").promises;
+const os = require("os");
 
 let blobsModule;
 try {
@@ -12,7 +13,7 @@ try {
   blobsModule = null;
 }
 
-const LOCAL_BASE = path.join(process.cwd(), "local_partials");
+const LOCAL_BASE = path.join(os.tmpdir(), "local_partials");
 
 async function readLocalPrefix(prefix) {
   // prefix is like "partials/<safeFileId>/"
@@ -33,7 +34,7 @@ async function readLocalPrefix(prefix) {
           }
         }
       } catch (e) {
-        /* ignore file read errors */
+        // ignore file read errors
       }
     }
   } catch (e) {
@@ -59,7 +60,6 @@ exports.handler = async (event) => {
       // Use blobs API
       try {
         const listed = await blobClient.list(prefix);
-        // `listed.blobs` is expected to be array of { key, ... }
         const items = listed && Array.isArray(listed.blobs) ? listed.blobs : [];
         for (const obj of items) {
           try {
@@ -70,15 +70,14 @@ exports.handler = async (event) => {
           }
         }
       } catch (e) {
-        console.warn("merge-results: blobs.list/get failed, falling back to local. err:", String(e));
+        console.warn("merge-results: blobs.list/get failed, falling back to local tmp. err:", String(e));
         partials = await readLocalPrefix(prefix);
       }
     } else {
-      // fallback to local filesystem
+      // fallback to OS tmp local filesystem
       partials = await readLocalPrefix(prefix);
     }
 
-    // sort by chunkIndex if present
     partials.sort((a, b) => (a.chunkIndex ?? 0) - (b.chunkIndex ?? 0));
 
     const aggregate = {
